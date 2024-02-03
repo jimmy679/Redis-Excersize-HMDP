@@ -1,5 +1,6 @@
 package com.hmdp.service.impl;
 
+import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.hmdp.dto.Result;
@@ -33,22 +34,102 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     @Override
     public Result queryById(Long id) {
+        //缓存穿透方法：Shop shop=queryWithPassThrough(id);
+        Shop shop=queryMutex(id);
+        if(shop == null){
+            return Result.fail("查询不到该店铺信息");
+        }
+        return Result.ok(shop);
+    }
+
+    public Shop queryMutex(Long id) {
         String shopJSON = stringRedisTemplate.opsForValue().get(RedisConstants.CACHE_SHOP_KEY + id);
         if(StrUtil.isNotBlank(shopJSON)){
             Shop shop = JSONUtil.toBean(shopJSON, Shop.class);
-            return Result.ok(shop);
+            return shop;
         }
-        if (shopJSON != null){//此处只可能为null或""
-            return Result.fail("缓存中没有店铺信息！");
+        if (shopJSON != null){
+            return null;
+        }
+        //实现缓存重建
+        String lockKey=RedisConstants.LOCK_SHOP_KEY + id;
+        Shop shop;
+        try {
+            boolean lock = tryLock(lockKey);
+            if (!lock){
+                Thread.sleep(1000);
+                return queryMutex(id);//递归调用
+            }
+            String shopJSON2 = stringRedisTemplate.opsForValue().get(RedisConstants.CACHE_SHOP_KEY + id);
+            if(StrUtil.isNotBlank(shopJSON2)){
+                Shop shop2 = JSONUtil.toBean(shopJSON2, Shop.class);
+                return shop2;
+            }
+            shop = getById(id);
+            //模拟高重建时间
+            Thread.sleep(200);
+            if(shop == null){
+                stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY+ id,"",RedisConstants.CACHE_NULL_TTL, TimeUnit.MINUTES);
+                return null;
+            }
+            stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY + id, JSONUtil.toJsonStr(shop),RedisConstants.CACHE_SHOP_TTL, TimeUnit.MINUTES);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } finally {
+            unlock(lockKey);
+        }
+        return shop;
+    }
+
+    public Shop queryShopPassThrough(Long id){
+        String shopJSON = stringRedisTemplate.opsForValue().get(RedisConstants.CACHE_SHOP_KEY + id);
+        if(StrUtil.isNotBlank(shopJSON)){
+            Shop shop = JSONUtil.toBean(shopJSON, Shop.class);
+            return shop;
+        }
+        if (shopJSON != null){
+            return null;
         }
         Shop shop = getById(id);
         if(shop == null){
             stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY+ id,"",RedisConstants.CACHE_NULL_TTL, TimeUnit.MINUTES);
-            return Result.fail("店铺不存在！");
+            return null;
         }
         stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY + id, JSONUtil.toJsonStr(shop),RedisConstants.CACHE_SHOP_TTL, TimeUnit.MINUTES);
-        return Result.ok(shop);
+        return shop;
     }
+
+    public Shop queryWithPassThrough(Long id){
+        String shopJSON = stringRedisTemplate.opsForValue().get(RedisConstants.CACHE_SHOP_KEY + id);
+        if(StrUtil.isNotBlank(shopJSON)){
+            Shop shop = JSONUtil.toBean(shopJSON, Shop.class);
+            return shop;
+        }
+        if (shopJSON != null){
+            return null;
+        }
+        Shop shop = getById(id);
+        if(shop == null){
+            stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY+ id,"",RedisConstants.CACHE_NULL_TTL, TimeUnit.MINUTES);
+            return null;
+        }
+        stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY + id, JSONUtil.toJsonStr(shop),RedisConstants.CACHE_SHOP_TTL, TimeUnit.MINUTES);
+        return shop;
+    }
+
+
+
+
+
+
+    private boolean tryLock(String key){
+        Boolean flag = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", 10, TimeUnit.SECONDS);
+        return BooleanUtil.isTrue(flag);
+    }
+    private void unlock(String key){
+        stringRedisTemplate.delete(key);
+    }
+
 
     @Override
     @Transactional
