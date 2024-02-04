@@ -47,6 +47,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         boolean update = iSeckillVoucherService.update()
                 .setSql("stock = stock- 1")
                 .eq("voucher_id",voucherId)
+                .gt("stock",0)
                 .update();
         if (!update){
             return Result.fail("秒杀已售完!");
