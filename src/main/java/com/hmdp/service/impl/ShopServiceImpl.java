@@ -9,6 +9,7 @@ import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.RedisData;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -37,11 +39,13 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     private final StringRedisTemplate stringRedisTemplate;
 
+    @Resource
+    private final CacheClient cacheClient;
     @Override
     public Result queryById(Long id) {
-        //Shop shop=queryWithPassThrough(id);//缓存穿透方法：
-//        Shop shop=queryMutex(id);//互斥锁解决缓存穿透
-      Shop shop = queryWithLogicalExpire(id);
+      //Shop shop=cacheClient.queryShopPassThrough(RedisConstants.CACHE_SHOP_KEY, id, Shop.class,id2->getById(id2), RedisConstants.CACHE_SHOP_TTL, TimeUnit.SECONDS);
+      //Shop shop=queryMutex(id);//互斥锁解决缓存穿透
+      Shop shop = cacheClient.queryWithLogicalExpire(RedisConstants.CACHE_SHOP_KEY,id, Shop.class,id2->getById(id2), 20L, TimeUnit.SECONDS);
         if(shop == null){
             return Result.fail("查询不到该店铺信息");
         }
