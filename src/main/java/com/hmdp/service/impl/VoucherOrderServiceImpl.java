@@ -8,8 +8,11 @@ import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
+import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
+import lombok.RequiredArgsConstructor;
 import org.springframework.aop.framework.AopContext;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +33,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Resource
     private ISeckillVoucherService iSeckillVoucherService;
     @Resource
+    private  StringRedisTemplate stringRedisTemplate;
+
+    @Resource
     private RedisIdWorker redisIdWorker;
     @Override
     public Result settleVoucher(Long voucherId) {
@@ -44,10 +50,18 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return Result.fail("秒杀已售完!");
         }
         Long id2 = UserHolder.getUser().getId();
-        synchronized(id2.toString().intern()){
-        IVoucherOrderService context = (
-                IVoucherOrderService)AopContext.currentProxy();
-        return context.createVoucher(voucherId);}
+        //创建锁对象
+        SimpleRedisLock lock = new SimpleRedisLock("order:" + id2, stringRedisTemplate);
+        if (!lock.tryLock(1200)) {
+            return Result.fail("抱歉，秒杀繁忙，请稍后再试!");
+        }
+        try {
+            IVoucherOrderService context = (
+                    IVoucherOrderService)AopContext.currentProxy();
+            return context.createVoucher(voucherId);
+        } finally {
+            lock.unlock();
+        }
     }
 
         @Transactional
