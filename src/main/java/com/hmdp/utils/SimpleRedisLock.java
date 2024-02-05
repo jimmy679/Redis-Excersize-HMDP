@@ -1,5 +1,6 @@
 package com.hmdp.utils;
 
+import cn.hutool.core.lang.UUID;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +15,7 @@ public class SimpleRedisLock implements ILock{
     private  StringRedisTemplate stringRedisTemplate;
     private String name;
     private static final String LOCK_PREFIX = "lock:";
+    private static final String THREAD_PREFIX= UUID.randomUUID().toString(true)+"-";
 
     public SimpleRedisLock(String name, StringRedisTemplate stringRedisTemplate) {
         this.stringRedisTemplate = stringRedisTemplate;
@@ -22,7 +24,7 @@ public class SimpleRedisLock implements ILock{
 
     @Override
     public boolean tryLock(long timeoutSec) {
-        String name = Thread.currentThread().getName();
+        String name = Thread.currentThread().getName()+THREAD_PREFIX;
         Boolean success = stringRedisTemplate.opsForValue().setIfAbsent(LOCK_PREFIX + this.name,
                 name, timeoutSec, TimeUnit.SECONDS);
         return Boolean.TRUE.equals(success);
@@ -30,6 +32,10 @@ public class SimpleRedisLock implements ILock{
 
     @Override
     public void unlock() {
-        stringRedisTemplate.delete(LOCK_PREFIX + this.name);
+        String name = Thread.currentThread().getName()+THREAD_PREFIX;
+        String s = stringRedisTemplate.opsForValue().get(LOCK_PREFIX + this.name);
+        if(name.equals(s)){
+            stringRedisTemplate.delete(LOCK_PREFIX + this.name);
+        }
     }
 }
