@@ -1,5 +1,6 @@
 package com.hmdp.service.impl;
 
+import com.hmdp.config.RedissonConfig;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.SeckillVoucher;
 import com.hmdp.entity.VoucherOrder;
@@ -11,6 +12,8 @@ import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
 import lombok.RequiredArgsConstructor;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -34,7 +37,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private ISeckillVoucherService iSeckillVoucherService;
     @Resource
     private  StringRedisTemplate stringRedisTemplate;
-
+    @Resource
+    private RedissonClient redissonClient;
     @Resource
     private RedisIdWorker redisIdWorker;
     @Override
@@ -51,8 +55,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         }
         Long id2 = UserHolder.getUser().getId();
         //创建锁对象
-        SimpleRedisLock lock = new SimpleRedisLock("order:" + id2, stringRedisTemplate);
-        if (!lock.tryLock(1200)) {
+//        SimpleRedisLock lock = new SimpleRedisLock("order:" + id2, stringRedisTemplate);
+        RLock lock = redissonClient.getLock("lock:order:" + id2);
+        if (!lock.tryLock()) {
             return Result.fail("抱歉，秒杀繁忙，请稍后再试!");
         }
         try {
